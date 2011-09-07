@@ -23,15 +23,18 @@
   \code{\link{obliqueRF}}
 }
 \examples{
-## Classification:
 require(obliqueRF);
 data(iris);
 #extract feature matrix
 x<-as.matrix(iris[,1:4]);
 #convert to 0/1 class labels
 y<-(as.numeric(iris[,5])>1)*1;
+
 iris.orf <- obliqueRF(x,y,training_method="log",bImportance=TRUE);
 importance(iris.orf);
+
+## Also see example given in ?obliqueRF()
+
 }
 %\author{}
 \keyword{regression}

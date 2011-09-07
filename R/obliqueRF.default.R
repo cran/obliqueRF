@@ -52,8 +52,12 @@ obliqueRF.default<- function(
 
     node_train_method=NULL;    
     if(training_method=="ridge"){        
-        node_train_method=ridge_wrapper
-        cat("obliqueRF: using ridge regression as node model,\n does not scale data at the node,\n tests regularization parameter \"lambda\" for 10^(c(-5:5)).\n")
+        node_train_method=ridge_svd_wrapper
+        cat("obliqueRF: using fast ridge regression with SVD as node model,\n does not scale data at the node,\n tests regularization parameter \"lambda\" for 10^(c(-5:5)).\n In case of problems with the SVD variant try training_method=\"ridge_slow\" for separate ridge regressions (slower).\n")
+    }
+    if(training_method=="ridge_slow"){        
+        node_train_method=ridge_slow_wrapper
+        cat("obliqueRF: using slow ridge regression as node model,\n does not scale data at the node,\n tests regularization parameter \"lambda\" for 10^(c(-5:5)) with separate explicit ridge regressions.\n")
     }
     if(training_method=="log"){
         node_train_method=log_wrapper
@@ -67,8 +71,14 @@ obliqueRF.default<- function(
         node_train_method=pls_wrapper        
         cat("obliqueRF: using partial least squares regression as node model,\n does not scale data at the node,\n optimizes regularization parameter \"ncomp\" (number of components) for 1:min(20, mtry).\n")
     }        
+    if(training_method=="rnd"){        
+        node_train_method=rnd_wrapper
+        cat("obliqueRF: using a random hyperplane as node model,\n scales data to unit variance at the node,\n coefficients of random subspace projection are chosen from a normal distribution with unit variance.\n")
+    }
 	if( is.null(node_train_method) )
-		stop("obliqueRF: could not determine training method, aborting...");
+	{
+		stop("obliqueRF: the training method is not valid, choose one of the following:\n  ridge, ridge_slow, log, svm, pls or rnd.\n  See documentation for more details. Aborting");
+	}
 
     node_pred_method=predict
 
@@ -685,9 +695,9 @@ gini_impurity_wrapper<-function(dmatrix, cls, b_sample, class_n, num_classes, nd
 
 
 
-# -------------------------------------------
-# NODE MODELS
-# -------------------------------------------
+## -------------------------------------------
+## NODE MODELS
+## -------------------------------------------
 
 
 ##--------------------------------------------
@@ -789,7 +799,7 @@ pls_wrapper<-function(x=NULL, y=NULL, ind,...) {
 ##--------------------------------------------
 
 
-ridge_wrapper<-function(x=NULL, y=NULL, ind,...) {
+ridge_slow_wrapper<-function(x=NULL, y=NULL, ind,...) {
    ## what samples: get bootstrapped data set 
     # ind contains the sample population;
     # build the bootstrap vector with repetitions
@@ -828,11 +838,107 @@ ridge_wrapper<-function(x=NULL, y=NULL, ind,...) {
       for(l in 1:numLambdas){
 	  
 	  objs[[l]]<-gen.ridge(x=t(t(X)), y=lab[wh], lambda=lambdas[l])
-	  
-	  # find optimal lambda from (local) oob: check how many classes match
-	  lbd[l]<-sum((predict(objs[[l]], t(t(Xt)))>0)*1==y[ind==0])
+	  p<-predict(objs[[l]], t(t(Xt)));
 
+	  # find optimal lambda from (local) oob: check how many classes match
+	  lbd[l]<-sum((p>0)*1==y[ind==0])
+	  
       }
+      # find (first) best lambda (with best matching)
+      wm<-which.max(as.numeric(lbd))[1]
+      # get again the stats for the best lambda
+      #z<-gen.ridge(x=t(t(X)), y=lab[wh], lambda=lambdas[wm])
+      z<-objs[[wm]];
+      bestRidgeValue=ridgeValues[wm];
+    }
+
+    COEF<-z$coefficients[,1]
+
+    v_norm=sqrt(COEF%*%COEF);
+    z$coef<-rep(0,ncol(x))
+    z$coef[wp]<-COEF/v_norm;
+
+    z$signif<-rep(0,ncol(x))
+    z$signif[wp]<-0;
+
+    z$ridge_value = bestRidgeValue;
+    z$lab<-"ridge"
+
+    return(z);
+}
+
+
+##--------------------------------------------
+## ridge wrapper using SVD
+##--------------------------------------------
+
+
+ridge_svd_wrapper<-function(x=NULL, y=NULL, ind,...) {
+   ## what samples: get bootstrapped data set 
+    # ind contains the sample population;
+    # build the bootstrap vector with repetitions
+    wh<-c();
+    for(i in 1:max(ind)) wh<-c(wh,which(ind>=i))
+
+   ## what features: remove constant variables
+    wp<-which(unlist(lapply(1:ncol(x),function(A) length(unique(x[wh,A]))>1)))
+
+    numLambdas=11;
+    ridgeValues=c(-5:5);
+    lambdas=10^(ridgeValues); #vector of possible lambdas
+    
+    bestRidgeValue=ridgeValues[1];
+
+    # the current sample and feature subset for the node
+    X<-scale(x[wh,wp], scale=F)
+
+    lbd<-rep(0, numLambdas); #vector for number of matches per lambda
+    lab<-c(-1,1)[y+1] # convert two class case into fit to -1 and 1
+
+   ## if there are no oobs left there is no need for testing different lambdas
+    if(sum(ind==0)==0)
+    {
+      z<-gen.ridge(x=t(t(X)), y=lab[wh], lambda=lambdas[1]);
+    }
+    else #test different lambdas
+    {
+      #save objects
+      objs<-vector("list",numLambdas);
+      
+      # the oobs with the current features
+      Xt<-scale(x[ind==0,wp],  center=attr(X,"scaled:center"), scale=F)
+
+      #SVD
+      A=t(t(X));
+      B=t(t(Xt));
+#      s<-svd(x=A);
+      s<-svd(x=A, nu=0, nv=ncol(A));
+      #precalculate everything we can
+      vH_Ab=Conj(t(s$v)) %*% Conj(t(A)) %*% lab[wh];
+
+      #make sure we don't run into trouble because of
+      #low rank
+      sigmas<-rep(0,ncol(A));
+      sigmas[1:length(s$d)]<-s$d;
+      sigmasSquared<-sigmas^2;
+      # loop over lambda
+      for(l in 1:numLambdas){
+	  
+	  #the regularised pseudo inverse
+	  svdCoeffs<-s$v%*%diag(1/((sigmasSquared+lambdas[l]) ) ) %*% vH_Ab;
+	  objs[[l]]$coefficients<-svdCoeffs;
+	  
+	  #calc distance to hyperplane
+	  p<-B %*% svdCoeffs;
+
+	  # find optimal lambda from (local) oob: check how many classes match
+	  lbd[l]<-sum((p>0)*1==y[ind==0])
+
+	  #for comparison
+	  #tmp<-gen.ridge(x=t(t(X)), y=lab[wh], lambda=lambdas[l])
+	  #p<-predict(tmp, t(t(Xt)));
+      }
+#browser()
       # find (first) best lambda (with best matching)
       wm<-which.max(as.numeric(lbd))[1]
       # get again the stats for the best lambda
@@ -904,5 +1010,35 @@ svm_wrapper<-function(x=NULL, y=NULL, ind,...) {
         z$lab<-"svm"
         z$ridge_value = lbd
     }
+    return(z);
+}
+
+
+##--------------------------------------------
+## random coefficients
+##--------------------------------------------
+
+rnd_wrapper<-function(x=NULL, y=NULL, ind,...) {
+
+   ## what samples: get bootstrapped data set 
+   wh<-c();
+   for(i in 1:max(ind)) wh<-c(wh,which(ind>=i))
+
+   ## what features: remove constant variables
+   wp<-which(unlist(lapply(1:ncol(x),function(A) length(unique(x[wh,A]))>1)))
+
+    z<-list()
+
+    X<-scale(x[wh,wp])
+
+    COEF<-rnorm(ncol(x))
+
+    v_norm=sqrt(COEF%*%COEF)/attr(X,"scaled:scale");
+    z$coef<-COEF/v_norm;
+
+    z$signif<-rep(0,ncol(x))
+    z$ridge_value = 0    
+    z$lab<-"rnorm"
+    
     return(z);
 }

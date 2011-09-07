@@ -5,11 +5,11 @@
 
 \title{Classification with Oblique Random Forest}
 \description{
-  \code{obliqueRF} implements a random forest with oblique decision trees for binary classification tasks. Alternative discriminative node models rely on: ridge regression, logistic regression, linear support vector machines.
+  \code{obliqueRF} implements a random forest with oblique decision trees for binary classification tasks. Discriminative node models in the tree are based on: ridge regression, logistic regression, linear support vector machines, or random splits.
 }
 \usage{
 \method{obliqueRF}{default}(
-		            x,
+                    x,
                     y,
                     x.test=NULL,
                     y.test=NULL,
@@ -30,7 +30,7 @@
   \item{y.test}{optional: binary response vector of a test data set}
   \item{mtry}{the number of variables to be tested in each node; default is mtry = max(sqrt(ncol(x),2)}
   \item{ntree}{the number of trees to generate in the forest; default is ntree = 100}
-  \item{training_method}{specify the node model; valid models are "ridge" for ridge regression, "pls" for partial least squares regression, "svm" for a linear support vector machine, "log" for logistic regression; hyperparameters for constrained methods are adapted to the oob data available at the node}
+  \item{training_method}{specify the node model; valid models are "ridge" for fast ridge regression using SVD, "ridge_slow" for a slower version using separate explicit ridge regressions, "pls" for partial least squares regression, "svm" for a linear support vector machine, "log" for logistic regression, "rnd" for a random hyperplane; hyperparameters for constrained methods are adapted to the oob data available at the node}
   \item{bImportance}{calculate the obliqueRF variable importance? default is FALSE; importance can only be calculated for unconstrained regression and sets training_method="log"; set ntree to a very large value}
   \item{bProximity}{calculate the obliqueRF sample proximity? default is FALSE; be aware that the proximity matrix scales with nrow(x)^2 and may require a prohibitive large amount of memory; set ntree to a very large value}
   \item{verbose}{print status messages?}
@@ -76,26 +76,25 @@ This is an R implementation, C code available from the authors upon request.
 require(obliqueRF)
 data(iris)
 
+## data
 # extract feature matrix
 x<-as.matrix(iris[,1:4])
 # convert to 0/1 class labels
 y<-as.numeric(iris[,5]=="setosa")
 
-# train
+## train
 smp<-sample(1:nrow(iris), nrow(iris)/5)
 obj <- obliqueRF(x[-smp,], y[-smp])
 
-# test
+## test
 pred <- predict(obj, x[smp,], type="prob")
 plot(pred[,2],col=y[smp]+1,ylab="setosa probability")
 table(pred[,2]>.5,y[smp])
 
-## example importance
+## example: importance
 imp<-rep(0,ncol(x))
 names(imp)<-colnames(x)
-#increase the number of iterations
-#for better results
-numIterations<-2
+numIterations<-2 #increase the number of iterations for better results, e.g., numIterations=100
 for(i in 1:numIterations){
  obj<-obliqueRF(x,y, 
 	training_method="log", bImportance=TRUE, 

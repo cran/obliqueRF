@@ -10,6 +10,6 @@ orfNews()
 %\arguments{
 %}
 \value{
-  None.
+  Package released: 05 Sept 2011.
 }
 \keyword{classif}
