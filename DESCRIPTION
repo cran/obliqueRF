@@ -1,7 +1,7 @@
 Package: obliqueRF
 Title: Oblique Random Forests from Recursive Linear Model Splits
-Version: 0.2
-Date: 2011-09-07
+Version: 0.3
+Date: 2012-08-10
 Depends: R (>= 2.0.0), stats, ROCR, pls, mda, e1071
 Author: Bjoern Menze and Nico Splitthoff
 Description: Random forest with oblique decision trees for binary
@@ -9,9 +9,8 @@ Description: Random forest with oblique decision trees for binary
         are based on: ridge regression, partial least squares
         regression, logistic regression, linear support vector
         machines, or random coefficients.
-Maintainer: Bjoern Menze <menze@csail.mit.edu> and D.N. Splitthoff
-        <nico.splitthoff@gmx.de>
+Maintainer: D.N. Splitthoff <nico.splitthoff@gmx.de>
 License: GPL (>= 2)
-Packaged: 2011-09-07 09:10:18 UTC; splitt
+Packaged: 2012-08-10 15:36:45 UTC; splitt
 Repository: CRAN
-Date/Publication: 2011-09-07 10:13:51
+Date/Publication: 2012-08-10 18:22:37
